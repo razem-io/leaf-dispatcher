@@ -1,0 +1,8 @@
+version: '2'
+services:
+  srv:
+    image: razemio/leaf-spy-dispatcher:latest
+    ports:
+      - 9000:9000
+    environment:
+      - APPLICATION_SECRET=changeme
