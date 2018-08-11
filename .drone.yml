@@ -1,0 +1,14 @@
+pipeline:
+  build:
+    image: bigtruedata/sbt:1.0.2-alpine-2.12.3
+    commands:
+      - sbt test universal:packageZipTarball
+  docker:
+    image: plugins/docker
+    repo: registry.cryptos.trading:5000/cryptos/analytics
+    dockerfile: Dockerfile
+    registry: registry.cryptos.trading:5000
+    secrets: [ docker_username, docker_password ]
+    tags:
+      - latest
+      - 0.0.1-SNAPSHOT
