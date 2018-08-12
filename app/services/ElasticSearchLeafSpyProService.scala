@@ -3,7 +3,7 @@ package services
 import com.sksamuel.elastic4s._
 import com.sksamuel.elastic4s.http.ElasticDsl._
 import com.sksamuel.elastic4s.http.index.{CreateIndexResponse, IndexResponse}
-import com.sksamuel.elastic4s.http.{HttpClient, RequestFailure, RequestSuccess}
+import com.sksamuel.elastic4s.http._
 import javax.inject.{Inject, Singleton}
 import models.leafspy.LeafSpyPayloadData
 import org.apache.http.client.config.RequestConfig
@@ -14,6 +14,7 @@ import play.api.libs.json.{JsNumber, Json, Reads, Writes}
 import play.api.{Configuration, Logger}
 
 import scala.concurrent.{ExecutionContext, Future}
+import scala.util.Try
 
 @Singleton
 class ElasticSearchLeafSpyProService @Inject() (config: Configuration, lifecycle: ApplicationLifecycle, notificationService: EventNotificationService) (implicit ec: ExecutionContext) {
@@ -28,8 +29,10 @@ class ElasticSearchLeafSpyProService @Inject() (config: Configuration, lifecycle
   implicit object LeafSpyPayloadDataIndexable extends Indexable[ElasticLeafSpyPayloadData] with HitReader[ElasticLeafSpyPayloadData]{
     override def json(t: ElasticLeafSpyPayloadData): String = Json.toJson(t).toString
 
-    override def read(hit: Hit): Either[Throwable, ElasticLeafSpyPayloadData] = {
-      Right(Json.parse(hit.sourceAsString).as[ElasticLeafSpyPayloadData])
+    override def read(hit: Hit): Try[ElasticLeafSpyPayloadData] = {
+      Try{
+        Json.parse(hit.sourceAsString).as[ElasticLeafSpyPayloadData]
+      }
     }
   }
 
@@ -39,8 +42,8 @@ class ElasticSearchLeafSpyProService @Inject() (config: Configuration, lifecycle
   val host: String = config.get[String]("elastic.host")
   val port: Int = config.get[Int]("elastic.port")
 
-  val client = HttpClient(
-    ElasticsearchClientUri(host, port),
+  val client = ElasticClient(
+    ElasticProperties(s"http://$host:$port"),
     (requestConfigBuilder: RequestConfig.Builder) => { requestConfigBuilder.setConnectionRequestTimeout(60000)},
     (httpClientBuilder: HttpAsyncClientBuilder) => { httpClientBuilder })
 
@@ -48,24 +51,19 @@ class ElasticSearchLeafSpyProService @Inject() (config: Configuration, lifecycle
   def init(): Unit = {
     logger.info(this.getClass.getSimpleName + " is enabled.")
 
+    // TODO: Handle errors
     client.execute {
       indexExists(indexName)
-    }.map {
-      case Right(r) =>
-        if(!r.result.exists) {
-          createLeafSpyProIndex().await
-        }
-
-        r.result.exists
-      case Left(_) =>
-        // TODO:  we need to have some error logic here
-        false
-    }.await
+    }.map(r =>
+      if(!r.result.exists) {
+        createLeafSpyProIndex().await
+      }
+    ).await
 
     notificationService.onLeafSpyProEvent(addLeafSpyPayloadData(_))
   }
 
-  def createLeafSpyProIndex(): Future[Either[RequestFailure, RequestSuccess[CreateIndexResponse]]] = {
+  def createLeafSpyProIndex(): Future[Response[CreateIndexResponse]] = {
     client.execute {
       createIndex(indexName).mappings(
         mapping(mappingName) as(
@@ -95,7 +93,7 @@ class ElasticSearchLeafSpyProService @Inject() (config: Configuration, lifecycle
     }
   }
 
-  def addLeafSpyPayloadData(data: LeafSpyPayloadData, refreshPolicy: RefreshPolicy = RefreshPolicy.NONE): Future[Either[RequestFailure, RequestSuccess[IndexResponse]]] =
+  def addLeafSpyPayloadData(data: LeafSpyPayloadData, refreshPolicy: RefreshPolicy = RefreshPolicy.NONE): Future[Response[IndexResponse]] =
     client.execute {
       indexInto(indexName / mappingName) doc ElasticLeafSpyPayloadData(data) refresh refreshPolicy
     }
