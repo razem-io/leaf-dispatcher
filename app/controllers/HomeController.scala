@@ -18,7 +18,7 @@ class HomeController @Inject()(cc: ControllerComponents, eventNotificationServic
       Ok(views.html.index())
     } else if(leafSpyData.isDefined) {
       leafSpyData.foreach(eventNotificationService.triggerLeafSpyProEvent)
-      Ok("status:0")
+      Ok("status:0").withHeaders(("status", "0"))
     } else {
       logger.error("Received invalid data: " + request.queryString)
       BadRequest("Invalid data send to Server.")
